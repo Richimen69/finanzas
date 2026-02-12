@@ -1,28 +1,83 @@
 "use client";
 
 import React from "react";
-import { ChartPie, BanknoteArrowUp, BanknoteArrowDown } from "lucide-react";
+import { BanknoteArrowUp, BanknoteArrowDown, ChartPie } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+
 type TipoMovimiento = "ingreso" | "gasto";
-// --- 1. DEFINICIÓN DE INTERFACES (Fuera del componente) ---
+
+const ESTILOS_BANCOS: Record<string, { gradient: string; logo: string }> = {
+  bbva: {
+    gradient: "from-[#004481] to-[#043263]",
+    logo: "BBVA",
+  },
+  didi: {
+    gradient: "from-[#F8843F] to-[#FF9760]",
+    logo: "DiDiCard",
+  },
+  santander: {
+    gradient: "from-[#ec0000] to-[#b30000]",
+    logo: "Santander",
+  },
+  nu: {
+    gradient: "from-[#820ad1] to-[#4b067a]",
+    logo: "Nu",
+  },
+  amex: {
+    gradient: "from-[#006fcf] to-[#003f77]",
+    logo: "Amex",
+  },
+  banamex: {
+    gradient: "from-[#004691] to-[#002d5d]",
+    logo: "Banamex",
+  },
+  hsbc: {
+    gradient: "from-[#db0011] to-[#8b000a]",
+    logo: "HSBC",
+  },
+  generica: {
+    gradient: "from-slate-700 to-slate-900",
+    logo: "Credit Card",
+  },
+};
+
+// Colores consistentes para las categorías
+const COLORES: Record<string, string> = {
+  Gasolina: "#fbbf24", // Ámbar
+  Supermercado: "#10b981", // Esmeralda
+  "Compras en linea": "#3b82f6", // Azul
+  Salud: "#ef4444", // Rojo
+  Entretenimiento: "#f472b6", // Rosa
+  Vivienda: "#8b5cf6", // Violeta
+  Otros: "#64748b", // Slate
+};
+
 interface Tarjeta {
   id: number | string;
   nombre: string;
+  alias?: string;
   limite_credito?: number;
+  dia_corte?: number;
 }
 
 interface Movimiento {
   id: string;
+  tarjeta_id?: number | string;
   tipo: TipoMovimiento;
   monto?: number;
   monto_total?: number;
   fecha?: string;
   fecha_compra?: string;
+  categoria: string;
   concepto?: string;
   establecimiento?: string;
+  es_msi?: boolean;
+  total_parcialidades?: number;
+  parcialidad_actual?: number;
 }
 
 interface DashboardProps {
-  tarjetas?: Tarjeta[]; // Las hacemos opcionales con ? para evitar errores si no vienen datos
+  tarjetas?: Tarjeta[];
   movimientos?: Movimiento[];
   resumen?: {
     disponible: number;
@@ -30,181 +85,411 @@ interface DashboardProps {
   };
 }
 
-// --- 2. COMPONENTE PRINCIPAL ---
-// Usamos las interfaces para tipar las props
+const obtenerEstiloBanco = (nombre: string) => {
+  const nombreLower = nombre.toLowerCase();
+  if (nombreLower.includes("bbva")) return ESTILOS_BANCOS.bbva;
+  if (nombreLower.includes("nu")) return ESTILOS_BANCOS.nu;
+  if (nombreLower.includes("santander")) return ESTILOS_BANCOS.santander;
+  if (nombreLower.includes("amex")) return ESTILOS_BANCOS.amex;
+  if (nombreLower.includes("citi")) return ESTILOS_BANCOS.banamex;
+  if (nombreLower.includes("hsbc")) return ESTILOS_BANCOS.hsbc;
+  if (nombreLower.includes("didi")) return ESTILOS_BANCOS.didi;
+  return ESTILOS_BANCOS.generica;
+};
+
+const obtenerIcono = (categoria: string) => {
+  switch (categoria) {
+    case "Gasolina":
+      return "⛽";
+    case "Supermercado":
+      return "🛒";
+    case "Compras en linea":
+      return "📦";
+    case "Salud":
+      return "💊";
+    case "Entretenimiento":
+      return "🍿";
+    case "Vivienda":
+      return "🏠";
+    default:
+      return "💰";
+  }
+};
+
 const DashboardTarjetas: React.FC<DashboardProps> = ({
   tarjetas = [],
   movimientos = [],
-  resumen = { disponible: 0, deuda: 0 }, // Valores por defecto
+  resumen = { disponible: 0, deuda: 0 },
 }) => {
+  // Cálculos de saldos
+  const calcularSaldoTarjeta = (
+    tarjetaId: number | string,
+    limite: number = 0,
+  ) => {
+    const deudaNeta = movimientos
+      .filter((m) => m.tarjeta_id === tarjetaId)
+      .reduce((acc, m) => acc + (m.monto_total || m.monto || 0), 0);
+    return {
+      disponible: limite - deudaNeta,
+      consumido: deudaNeta,
+      porcentaje: limite > 0 ? (deudaNeta / limite) * 100 : 0,
+    };
+  };
+
+  const calcularSaldoEfectivo = () => {
+    return resumen.disponible;
+  };
+
+  const prepararDatosGrafico = () => {
+    const resumenPorCat: Record<string, number> = {};
+    movimientos.forEach((mov) => {
+      const monto = Math.abs(mov.monto || mov.monto_total || 0);
+      const cat = mov.categoria || "Otros";
+      // Solo sumamos al gráfico si es un gasto real
+      if (
+        mov.tipo === "gasto" ||
+        (mov.tipo === "ingreso" && (mov.monto || 0) < 0)
+      ) {
+        resumenPorCat[cat] = (resumenPorCat[cat] || 0) + monto;
+      }
+    });
+    return Object.keys(resumenPorCat).map((key) => ({
+      name: key,
+      value: resumenPorCat[key],
+      color: COLORES[key] || COLORES.Otros,
+    }));
+  };
+
+  const calcularResumenFinanciero = () => {
+    const hoy = new Date();
+    const mesActual = hoy.getMonth();
+    const anioActual = hoy.getFullYear();
+
+    let ingresoTotalMes = 0;
+    let deudaTotalAcumulada = 0;
+    let deudaExigibleMes = 0;
+
+    // 1. Cálculo de Ingresos Totales del Mes
+    movimientos.forEach((mov) => {
+      const fechaMov = new Date(mov.fecha || mov.fecha_compra!);
+      if (mov.tipo === "ingreso" && (mov.monto || 0) > 0) {
+        if (
+          fechaMov.getMonth() === mesActual &&
+          fechaMov.getFullYear() === anioActual
+        ) {
+          ingresoTotalMes += mov.monto || 0;
+        }
+      }
+    });
+
+    // 2. Cálculo de Deuda (Total vs Mes)
+    movimientos.forEach((mov) => {
+      if (
+        mov.tipo === "gasto" &&
+        mov.tarjeta_id &&
+        mov.tarjeta_id !== "efectivo"
+      ) {
+        const tarjeta = tarjetas.find((t) => t.id === mov.tarjeta_id);
+        const montoGasto = mov.monto_total || mov.monto || 0;
+
+        // A. Sumar a Deuda Total (Lo que se debe siempre)
+        deudaTotalAcumulada += montoGasto;
+
+        // B. Lógica de Deuda del Mes (MSI + Fecha de Corte)
+        if (tarjeta) {
+          const fechaCompra = new Date(mov.fecha_compra!);
+          const diaCorte = tarjeta.dia_corte || 31;
+
+          // Determinar si entra en este periodo
+          // Si el día de compra es MAYOR al día de corte, pasa al siguiente mes
+          const entraEnEsteMes = fechaCompra.getDate() <= diaCorte;
+          const esMesActual = fechaCompra.getMonth() === mesActual;
+
+          if (entraEnEsteMes && esMesActual) {
+            if (mov.es_msi) {
+              // Si es MSI, solo sumamos la parcialidad (Monto / Total Meses)
+              const cuota = montoGasto / (mov.total_parcialidades || 1);
+              deudaExigibleMes += cuota;
+            } else {
+              // Si no es MSI, se suma todo
+              deudaExigibleMes += montoGasto;
+            }
+          }
+        }
+      }
+    });
+
+    return { ingresoTotalMes, deudaTotalAcumulada, deudaExigibleMes };
+  };
+
+  const { ingresoTotalMes, deudaTotalAcumulada, deudaExigibleMes } =
+    calcularResumenFinanciero();
+
+  const datosGrafico = prepararDatosGrafico();
+  const saldoEfectivoReal = calcularSaldoEfectivo();
+
   return (
     <div className="bg-[#0f172a] min-h-screen text-gray-100 font-sans pb-24">
-      {/* Header */}
       <header className="px-6 pt-12 pb-6 flex justify-between items-center sticky top-0 z-20 bg-[#0f172a]/90 backdrop-blur-md">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white">
-            Mis Tarjetas
+          <h1 className="text-3xl font-bold text-white tracking-tight">
+            Mis Finanzas
           </h1>
-          <p className="text-sm text-gray-400 mt-1">Resumen de cuenta</p>
+          <p className="text-sm text-gray-400 mt-1">Dashboard General</p>
         </div>
       </header>
 
-      {/* Slider de Tarjetas */}
-      <section className="mt-2 mb-8 relative">
-        <div className="flex overflow-x-auto space-x-6 px-6 pb-8 pt-4 scrollbar-hide snap-x snap-mandatory">
-          {tarjetas.length > 0 ? (
-            tarjetas.map((tarjeta, index) => (
-              <div
-                key={tarjeta.id || index}
-                className="snap-center shrink-0 w-[88%] relative group transition-transform duration-300"
-              >
-                <div
-                  className={`rounded-3xl p-6 text-white h-56 flex flex-col justify-between shadow-xl relative overflow-hidden transform hover:-translate-y-1 transition-all duration-300 ${
-                    index % 2 === 0
-                      ? "bg-gradient-to-br from-blue-600 to-indigo-900"
-                      : "bg-gradient-to-br from-purple-600 to-slate-900"
-                  }`}
-                >
-                  <div className="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+      {/* Tarjetas */}
+      <section className="mt-2 mb-8 overflow-x-auto scrollbar-hide flex space-x-6 px-6 pb-4 snap-x">
+        {tarjetas.map((tarjeta) => {
+          const estilo = obtenerEstiloBanco(tarjeta.nombre);
+          const info = calcularSaldoTarjeta(tarjeta.id, tarjeta.limite_credito);
 
-                  <div className="flex justify-between items-start z-10">
-                    <div>
-                      <span className="block text-xs font-semibold tracking-wider text-blue-200 mb-1 uppercase">
-                        Crédito
-                      </span>
-                      <span className="font-bold text-lg tracking-wide">
-                        {tarjeta.nombre}
-                      </span>
-                    </div>
+          return (
+            <div
+              key={tarjeta.id}
+              className="snap-center shrink-0 w-[85%] relative group"
+            >
+              <div
+                className={`rounded-3xl p-6 text-white h-56 flex flex-col justify-between shadow-2xl relative overflow-hidden bg-gradient-to-br ${estilo.gradient} border border-white/10 transition-transform duration-500`}
+              >
+                {/* Brillo decorativo */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl"></div>
+
+                <div className="flex justify-between items-start z-10">
+                  <div>
+                    {/* ALIAS COMO TÍTULO PRINCIPAL */}
+                    <h2 className="text-xl font-bold tracking-tight mb-0.5">
+                      {tarjeta.alias || "Mi Tarjeta"}
+                    </h2>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-60">
+                      {estilo.logo} {/* El banco ahora es el subtexto */}
+                    </p>
                   </div>
 
-                  <div className="z-10 mt-4">
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <p className="text-[10px] text-blue-200 opacity-80 uppercase tracking-wider mb-1">
-                          Disponible
+                  {/* Chip de tarjeta */}
+                  <div className="w-10 h-8 bg-gradient-to-br from-yellow-200/80 to-yellow-500/80 rounded-md shadow-inner relative overflow-hidden">
+                    <div className="absolute inset-0 grid grid-cols-2 border border-black/10 opacity-20">
+                      <div className="border-r border-b"></div>
+                      <div className="border-b"></div>
+                      <div className="border-r"></div>
+                      <div></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="z-10">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-[10px] text-white/50 uppercase font-bold tracking-wider">
+                        Disponible
+                      </p>
+                      <p className="text-3xl font-bold">
+                        ${info.disponible.toLocaleString()}
+                      </p>
+                    </div>
+
+                    {/* Info del día de corte */}
+                    {tarjeta.dia_corte && (
+                      <div className="text-right bg-black/20 px-3 py-1.5 rounded-xl backdrop-blur-md border border-white/5">
+                        <p className="text-[8px] text-white/50 uppercase font-bold">
+                          Corte
                         </p>
-                        <p className="font-medium text-lg tracking-wide">
-                          ${tarjeta.limite_credito?.toLocaleString() || "0.00"}
+                        <p className="text-xs font-bold">
+                          Día {tarjeta.dia_corte}
                         </p>
                       </div>
-                    </div>
+                    )}
+                  </div>
+
+                  {/* Barra de progreso de deuda */}
+                  <div className="w-full bg-black/20 h-1.5 rounded-full mt-4 overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-1000 ${info.porcentaje > 85 ? "bg-orange-400" : "bg-white/90"}`}
+                      style={{ width: `${Math.min(info.porcentaje, 100)}%` }}
+                    ></div>
                   </div>
                 </div>
               </div>
-            ))
-          ) : (
-            <div className="px-6 text-gray-500 italic">
-              No hay tarjetas vinculadas.
             </div>
-          )}
-        </div>
+          );
+        })}
       </section>
 
-      {/* Resumen dinámico con los datos de las props */}
+      {/* Cuentas Rápidas */}
       <section className="px-6 mb-8">
-        <div className="bg-slate-800/50 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl relative overflow-hidden">
-          <div className="flex justify-between items-center mb-6 border-b border-gray-700/50 pb-4">
-            <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
-              <span className="material-symbols-outlined text-blue-400 text-sm">
-                <ChartPie />
-              </span>
-              Resumen Mensual
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6 relative z-10">
-            <div className="col-span-1">
-              <p className="text-xs text-gray-400 mb-1 font-medium uppercase tracking-wide">
-                Efectivo Disponible
+        <div className="bg-slate-800/40 backdrop-blur-md rounded-3xl p-6 border border-white/5 shadow-2xl">
+          <div className="grid grid-cols-2 gap-y-8 gap-x-4">
+            {/* 1. Ingreso Total Mes */}
+            <div className="relative">
+              <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest mb-1">
+                Ingreso del Mes
               </p>
-              <p className="text-2xl font-bold text-white tracking-tight">
-                ${resumen.disponible.toLocaleString()}
-                <span className="text-lg text-gray-500">.00</span>
+              <p className="text-2xl font-bold text-white">
+                ${ingresoTotalMes.toLocaleString()}
               </p>
+              <div className="absolute -left-2 top-0 h-full w-0.5 bg-emerald-500 rounded-full"></div>
             </div>
-            <div className="col-span-1 pl-6 border-l border-gray-700">
-              <p className="text-xs text-gray-400 mb-1 font-medium uppercase tracking-wide">
-                Deuda del Mes
+
+            {/* 2. Efectivo Disponible */}
+            <div className="relative">
+              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">
+                Efectivo Real
               </p>
-              <p className="text-2xl font-bold text-red-400 tracking-tight">
-                ${resumen.deuda.toLocaleString()}
-                <span className="text-lg opacity-50">.00</span>
+              <p className="text-2xl font-bold text-white">
+                ${saldoEfectivoReal.toLocaleString()}
               </p>
+              <div className="absolute -left-2 top-0 h-full w-0.5 bg-blue-500 rounded-full"></div>
+            </div>
+
+            {/* 3. Deuda en el Mes (Lo urgente) */}
+            <div className="relative">
+              <p className="text-[10px] text-orange-400 font-bold uppercase tracking-widest mb-1">
+                Pago del Mes (Corte)
+              </p>
+              <p className="text-2xl font-bold text-white">
+                $
+                {deudaExigibleMes.toLocaleString(undefined, {
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+              <p className="text-[9px] text-gray-500 mt-1 italic">
+                Incluye MSI exigibles
+              </p>
+              <div className="absolute -left-2 top-0 h-full w-0.5 bg-orange-500 rounded-full"></div>
+            </div>
+
+            {/* 4. Deuda Total (Todo lo acumulado) */}
+            <div className="relative">
+              <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-1">
+                Deuda Total
+              </p>
+              <p className="text-2xl font-bold text-white">
+                ${deudaTotalAcumulada.toLocaleString()}
+              </p>
+              <div className="absolute -left-2 top-0 h-full w-0.5 bg-red-500 rounded-full"></div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Movimientos Recientes */}
-      <section className="px-6 flex-1">
-        <div className="flex justify-between items-center mb-5">
-          <h3 className="text-lg font-semibold text-gray-100">Movimientos</h3>
-          <button className="text-xs text-blue-400 font-medium uppercase tracking-wide">
-            Ver todo
-          </button>
-        </div>
+      {/* Gráfico de Gastos */}
+      {datosGrafico.length > 0 && (
+        <section className="px-6 mb-8">
+          <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+            <h3 className="text-sm font-bold text-gray-400 uppercase mb-4 flex items-center gap-2">
+              <ChartPie size={16} /> Distribución de Gastos
+            </h3>
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={datosGrafico}
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={8}
+                    dataKey="value"
+                  >
+                    {datosGrafico.map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={entry.color}
+                        stroke="none"
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "#1e293b",
+                      border: "none",
+                      borderRadius: "12px",
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </section>
+      )}
 
+      {/* Movimientos */}
+      <section className="px-6">
+        <h3 className="text-lg font-bold mb-4">Actividad Reciente</h3>
         <div className="space-y-3">
-          {movimientos.length > 0 ? (
-            movimientos.map((mov, i) => {
-              // 1. Unificamos el Monto: Buscamos monto (ingresos) o monto_total (gastos)
-              const valorAMostrar = mov.monto ?? mov.monto_total ?? 0;
+          {movimientos
+            .sort(
+              (a, b) =>
+                new Date(b.fecha || b.fecha_compra!).getTime() -
+                new Date(a.fecha || a.fecha_compra!).getTime(),
+            )
+            .map((mov) => {
+              const tarjeta = tarjetas.find((t) => t.id === mov.tarjeta_id);
+              const monto = mov.monto || mov.monto_total || 0;
 
-              // 2. Unificamos la Descripción: Buscamos concepto (ingresos) o establecimiento (gastos)
-              const descripcionAMostrar =
-                mov.concepto ?? mov.establecimiento ?? "Sin descripción";
+              // IDENTIFICACIÓN DE TIPOS
+              const esPagoATarjeta =
+                mov.establecimiento === "PAGO A TARJETA (ABONO)" ||
+                (monto < 0 && mov.tarjeta_id);
+              const esIngresoReal = mov.tipo === "ingreso" && monto > 0; // Tu sueldo, por ejemplo
+              const esGasto =
+                mov.tipo === "gasto" || (mov.tipo === "ingreso" && monto < 0);
 
               return (
                 <div
-                  key={mov.id || i}
-                  className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/40 hover:bg-slate-800 transition border border-gray-800 group cursor-pointer"
+                  key={mov.id}
+                  className="flex items-center justify-between p-4 rounded-2xl bg-slate-800/30 border border-white/5"
                 >
                   <div className="flex items-center gap-4">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-transform group-hover:scale-110 ${
-                        mov.tipo === "ingreso"
-                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                          : "bg-orange-500/10 text-orange-400 border-orange-500/20"
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner ${
+                        esIngresoReal ? "bg-emerald-500/20" : "bg-slate-700"
                       }`}
                     >
-                      <span className="material-symbols-outlined text-lg">
-                        {mov.tipo === "ingreso" ? (
-                          <BanknoteArrowDown />
-                        ) : (
-                          <BanknoteArrowUp />
-                        )}
-                      </span>
+                      {/* Si es ingreso real, mostramos billete, si no, el icono de categoría */}
+                      {esIngresoReal ? (
+                        <BanknoteArrowDown />
+                      ) : (
+                        <BanknoteArrowUp />
+                      )}
                     </div>
                     <div>
-                      <p className="font-medium text-sm text-gray-200">
-                        {descripcionAMostrar}
+                      <p className="text-sm font-bold text-gray-200">
+                        {esPagoATarjeta
+                          ? `Abono a ${tarjeta?.nombre}`
+                          : mov.concepto || mov.establecimiento}
                       </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {new Date(
-                          (mov.fecha || mov.fecha_compra) as string,
-                        ).toLocaleDateString()}
+                      <p className="text-[10px] text-gray-500 uppercase font-bold">
+                        {esIngresoReal
+                          ? "Entrada de dinero"
+                          : `${mov.categoria} • ${tarjeta ? tarjeta.nombre : "Efectivo"}`}
                       </p>
                     </div>
                   </div>
-
-                  {/* Mostramos el monto con formato y color según el tipo */}
-                  <span
-                    className={`font-semibold text-sm ${mov.tipo === "ingreso" ? "text-emerald-400" : "text-gray-200"}`}
-                  >
-                    {mov.tipo === "ingreso" ? "+" : "-"} $
-                    {Number(valorAMostrar).toLocaleString("es-MX", {
-                      minimumFractionDigits: 2,
-                    })}
-                  </span>
+                  <div className="text-right">
+                    <p
+                      className={`text-sm font-bold ${
+                        esIngresoReal || esPagoATarjeta
+                          ? "text-emerald-400"
+                          : "text-red-400"
+                      }`}
+                    >
+                      {esIngresoReal || esPagoATarjeta ? "+" : "-"}$
+                      {Math.abs(monto).toLocaleString("es-MX", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </p>
+                    <p className="text-[10px] text-gray-500">
+                      {new Date(
+                        mov.fecha || mov.fecha_compra!,
+                      ).toLocaleDateString("es-MX", {
+                        day: "2-digit",
+                        month: "short",
+                      })}
+                    </p>
+                  </div>
                 </div>
               );
-            })
-          ) : (
-            <p className="text-center text-gray-600 text-sm py-4">
-              Sin movimientos recientes
-            </p>
-          )}
+            })}
         </div>
       </section>
     </div>

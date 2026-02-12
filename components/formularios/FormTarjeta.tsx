@@ -1,15 +1,33 @@
-'use client'
+"use client";
 
-import { agregarTarjeta } from '@/app/actions'
-import { IdCard, CalendarDays, CalendarClock, CreditCard  } from 'lucide-react'
+import { agregarTarjeta } from "@/app/actions";
+import {
+  IdCard,
+  CalendarDays,
+  CalendarClock,
+  CreditCard,
+  Landmark,
+  Tag,
+} from "lucide-react";
+
+const BANCOS = [
+  { id: "bbva", nombre: "BBVA" },
+  { id: "nu", nombre: "Nu Bank" },
+  { id: "santander", nombre: "Santander" },
+  { id: "amex", nombre: "American Express" },
+  { id: "banamex", nombre: "Banamex" },
+  { id: "hsbc", nombre: "HSBC" },
+  { id: "banorte", nombre: "Banorte" },
+  { id: "otro", nombre: "Otro Banco" },
+];
 
 export default function FormTarjeta() {
   async function handleAction(formData: FormData) {
-    const result = await agregarTarjeta(formData)
+    const result = await agregarTarjeta(formData);
     if (result.success) {
-      alert("Tarjeta registrada con éxito")
+      alert("Tarjeta registrada con éxito");
     } else {
-      alert("Error: " + result.error)
+      alert("Error: " + result.error);
     }
   }
 
@@ -18,7 +36,9 @@ export default function FormTarjeta() {
       {/* Indicador de Progreso Estético */}
       <div className="mb-8 mt-2">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-blue-500 font-bold text-xs uppercase tracking-wider">Agregar Tarjeta</span>
+          <span className="text-blue-500 font-bold text-xs uppercase tracking-wider">
+            Agregar Tarjeta
+          </span>
         </div>
       </div>
 
@@ -26,28 +46,63 @@ export default function FormTarjeta() {
       <div className="bg-zinc-900 rounded-2xl shadow-lg border border-zinc-800 p-6">
         <div className="flex items-center space-x-4 mb-8">
           <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
-            <span className="material-symbols-outlined text-2xl"><CreditCard/></span>
+            <span className="material-symbols-outlined text-2xl">
+              <CreditCard />
+            </span>
           </div>
           <div>
             <h2 className="text-lg font-semibold text-white">Nueva Tarjeta</h2>
-            <p className="text-xs text-zinc-400">Ingresa los detalles de tu crédito</p>
+            <p className="text-xs text-zinc-400">
+              Ingresa los detalles de tu crédito
+            </p>
           </div>
         </div>
 
         <form action={handleAction} className="space-y-6">
-          {/* Nombre del Crédito */}
           <div className="space-y-2">
             <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide ml-1">
-              Nombre del Crédito
+              Institución Bancaria
             </label>
             <div className="relative group">
               <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <span className="material-symbols-outlined text-zinc-400 group-focus-within:text-blue-500 transition-colors text-[20px]"><IdCard/></span>
+                <Landmark
+                  size={20}
+                  className="text-zinc-400 group-focus-within:text-blue-500 transition-colors"
+                />
+              </div>
+              <select
+                name="nombre" // Usamos 'nombre' para que guarde el banco y active los estilos del dashboard
+                className="block w-full rounded-xl border border-transparent bg-zinc-800 text-white focus:border-blue-500 focus:bg-zinc-800/50 focus:ring-1 focus:ring-blue-500 sm:text-sm py-3.5 pl-12 pr-10 appearance-none transition-all duration-200"
+                required
+              >
+                <option value="" disabled>
+                  Selecciona un banco
+                </option>
+                {BANCOS.map((banco) => (
+                  <option key={banco.id} value={banco.nombre}>
+                    {banco.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Alias del Crédito */}
+          <div className="space-y-2">
+            <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wide ml-1">
+              Alias o Apodo
+            </label>
+            <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                <Tag
+                  size={20}
+                  className="text-zinc-400 group-focus-within:text-blue-500 transition-colors"
+                />
               </div>
               <input
-                name="nombre"
+                name="alias"
                 type="text"
-                placeholder="Ej. BBVA Oro"
+                placeholder="Ej. Mi tarjeta de ahorros, Compras Amazon"
                 className="block w-full rounded-xl border border-transparent bg-zinc-800 text-white placeholder-zinc-500 focus:border-blue-500 focus:bg-zinc-800/50 focus:ring-1 focus:ring-blue-500 sm:text-sm py-3.5 pl-12 pr-4 transition-all duration-200"
                 required
               />
@@ -61,7 +116,9 @@ export default function FormTarjeta() {
             </label>
             <div className="relative group">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                <span className="text-zinc-400 group-focus-within:text-blue-500 transition-colors text-lg">$</span>
+                <span className="text-zinc-400 group-focus-within:text-blue-500 transition-colors text-lg">
+                  $
+                </span>
               </div>
               <input
                 name="limite_credito"
@@ -89,7 +146,9 @@ export default function FormTarjeta() {
                   required
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <span className="material-symbols-outlined text-zinc-400 group-focus-within:text-blue-500 text-sm"><CalendarDays/></span>
+                  <span className="material-symbols-outlined text-zinc-400 group-focus-within:text-blue-500 text-sm">
+                    <CalendarDays />
+                  </span>
                 </div>
               </div>
             </div>
@@ -109,7 +168,9 @@ export default function FormTarjeta() {
                   required
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                  <span className="material-symbols-outlined text-zinc-400 group-focus-within:text-blue-500 text-sm"><CalendarClock/></span>
+                  <span className="material-symbols-outlined text-zinc-400 group-focus-within:text-blue-500 text-sm">
+                    <CalendarClock />
+                  </span>
                 </div>
               </div>
             </div>
@@ -127,5 +188,5 @@ export default function FormTarjeta() {
         </form>
       </div>
     </div>
-  )
+  );
 }
