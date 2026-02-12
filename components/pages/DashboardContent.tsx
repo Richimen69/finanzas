@@ -2,46 +2,51 @@
 import { createClient } from "@/lib/supabase/server";
 import DashboardTarjetas from "./Dashboard";
 import FormGasto from "../formularios/FormGastos";
+import FormIngreso from "../formularios/FormIngreso";
 
 export default async function DashboardContent() {
   const supabase = await createClient();
 
   // Consultas que antes bloqueaban la página
   const { data: tarjetas } = await supabase
-    .from('tarjetas')
-    .select('*')
-    .order('created_at', { ascending: false });
+    .from("tarjetas")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-  const { data: gastos } = await supabase.from('gastos').select('*');
-  const { data: ingresos } = await supabase.from('ingresos').select('*');
+  const { data: gastos } = await supabase.from("gastos").select("*");
+  const { data: ingresos } = await supabase.from("ingresos").select("*");
 
   // Lógica de procesamiento de movimientos
   const movimientosRaw = [
-    ...(gastos?.map(g => ({ ...g, tipo: 'gasto' as const })) || []),
-    ...(ingresos?.map(i => ({ ...i, tipo: 'ingreso' as const })) || [])
+    ...(gastos?.map((g) => ({ ...g, tipo: "gasto" as const })) || []),
+    ...(ingresos?.map((i) => ({ ...i, tipo: "ingreso" as const })) || []),
   ];
 
-  const movimientos = movimientosRaw.sort((a, b) => 
-    new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
+  const movimientos = movimientosRaw.sort(
+    (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime(),
   );
 
+  const totalDeuda =
+    gastos?.reduce((acc, curr) => acc + (Number(curr.monto_total) || 0), 0) ||
+    0;
 
-const totalDeuda = gastos?.reduce((acc, curr) => acc + (Number(curr.monto_total) || 0), 0) || 0;
+  const totalIngresos =
+    ingresos?.reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0) || 0;
 
-
-const totalIngresos = ingresos?.reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0) || 0;
-
-const disponibleEfectivo = totalIngresos - totalDeuda;
+  const disponibleEfectivo = totalIngresos - totalDeuda;
 
   return (
     <div>
-    <DashboardTarjetas 
-      tarjetas={tarjetas || []} 
-      movimientos={movimientos.slice(0, 5)} 
-      resumen={{ disponible: disponibleEfectivo, deuda: totalDeuda }}
-    />
-    <div className="max-w-md mx-auto p-4">
+      <DashboardTarjetas
+        tarjetas={tarjetas || []}
+        movimientos={movimientos.slice(0, 5)}
+        resumen={{ disponible: disponibleEfectivo, deuda: totalDeuda }}
+      />
+      <div className="max-w-md mx-auto p-4">
         <FormGasto tarjetas={tarjetas || []} />
+      </div>
+      <div>
+        <FormIngreso/>
       </div>
     </div>
   );

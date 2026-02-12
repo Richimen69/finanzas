@@ -63,7 +63,7 @@ export default function FormGasto({ tarjetas }: { tarjetas: Tarjeta[] }) {
                 required
                 defaultValue=""
               >
-                <option value="" disabled selected>Selecciona una tarjeta</option>
+                <option value="" disabled>Selecciona una tarjeta</option>
                 {tarjetas.map((t) => (
                   <option key={t.id} value={t.id} className="dark:bg-slate-800">
                     {t.nombre}
