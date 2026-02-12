@@ -1,6 +1,7 @@
 // src/components/DashboardContent.tsx
 import { createClient } from "@/lib/supabase/server";
 import DashboardTarjetas from "./Dashboard";
+import FormGasto from "../formularios/FormGastos";
 
 export default async function DashboardContent() {
   const supabase = await createClient();
@@ -24,20 +25,24 @@ export default async function DashboardContent() {
     new Date(b.fecha).getTime() - new Date(a.fecha).getTime()
   );
 
-// 1. Sumamos todos los montos de la tabla 'gastos'
-const totalDeuda = gastos?.reduce((acc, curr) => acc + curr.monto, 0) || 0;
 
-// 2. Sumamos todos los montos de la tabla 'ingresos'
-const totalIngresos = ingresos?.reduce((acc, curr) => acc + curr.monto, 0) || 0;
+const totalDeuda = gastos?.reduce((acc, curr) => acc + (Number(curr.monto_total) || 0), 0) || 0;
 
-// 3. LA RESTA CLAVE: Aquí es donde se define 'disponible'
+
+const totalIngresos = ingresos?.reduce((acc, curr) => acc + (Number(curr.monto) || 0), 0) || 0;
+
 const disponibleEfectivo = totalIngresos - totalDeuda;
 
   return (
+    <div>
     <DashboardTarjetas 
       tarjetas={tarjetas || []} 
       movimientos={movimientos.slice(0, 5)} 
       resumen={{ disponible: disponibleEfectivo, deuda: totalDeuda }}
     />
+    <div className="max-w-md mx-auto p-4">
+        <FormGasto tarjetas={tarjetas || []} />
+      </div>
+    </div>
   );
 }
