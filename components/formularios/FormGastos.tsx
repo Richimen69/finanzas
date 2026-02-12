@@ -13,8 +13,8 @@ const categorias = [
   { nombre: "Gasolina", icon: "⛽" },
   { nombre: "Supermercado", icon: "🛒" },
   { nombre: "Compras en linea", icon: "📦" },
-  { nombre: "Salud", icon: "💊" },
-  { nombre: "Vivienda", icon: "🏠" },
+  { nombre: "Comida", icon: "🍕" },
+  { nombre: "Otros", icon: "❔" },
 ];
 
 export default function FormGasto({ tarjetas }: { tarjetas: Tarjeta[] }) {
