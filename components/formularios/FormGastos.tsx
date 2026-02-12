@@ -7,6 +7,7 @@ import { ShoppingCart, ChevronDown, Banknote, CreditCard } from "lucide-react";
 interface Tarjeta {
   id: string;
   nombre: string;
+  alias: string;
 }
 const categorias = [
   { nombre: "Gasolina", icon: "⛽" },
@@ -129,7 +130,7 @@ export default function FormGasto({ tarjetas }: { tarjetas: Tarjeta[] }) {
                 )}
                 {tarjetas.map((t) => (
                   <option key={t.id} value={t.id}>
-                    💳 {t.nombre}
+                    💳 {t.alias}
                   </option>
                 ))}
               </select>
