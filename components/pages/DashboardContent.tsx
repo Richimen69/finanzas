@@ -45,7 +45,7 @@ export default async function DashboardContent() {
       <div className="max-w-md mx-auto p-4">
         <FormGasto tarjetas={tarjetas || []} />
       </div>
-      <div>
+      <div className="max-w-md mx-auto p-4">
         <FormIngreso/>
       </div>
     </div>
