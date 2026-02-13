@@ -49,6 +49,7 @@ const COLORES: Record<string, string> = {
   Salud: "#ef4444", // Rojo
   Entretenimiento: "#f472b6", // Rosa
   Vivienda: "#8b5cf6", // Violeta
+  Comida: "#fffff",
   Otros: "#64748b", // Slate
 };
 
@@ -109,8 +110,8 @@ const obtenerIcono = (categoria: string) => {
       return "💊";
     case "Entretenimiento":
       return "🍿";
-    case "Vivienda":
-      return "🏠";
+    case "Comida":
+      return "🍕";
     default:
       return "💰";
   }
