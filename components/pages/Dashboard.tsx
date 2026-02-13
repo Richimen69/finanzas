@@ -127,44 +127,62 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
     tarjetaId: number | string,
     limite: number = 0,
   ) => {
-    const deudaNeta = movimientos
+    const deudaCalculada = movimientos
       .filter((m) => m.tarjeta_id === tarjetaId)
-      .reduce((acc, m) => acc + (m.monto_total || m.monto || 0), 0);
+      .reduce((acc, m) => {
+        const montoGasto = m.monto_total || m.monto || 0;
+
+        // Si es MSI, solo restamos del disponible lo que falta por pagar (Saldo insoluto)
+        if (m.es_msi && m.total_parcialidades && m.parcialidad_actual) {
+          const cuota = montoGasto / m.total_parcialidades;
+          const mesesRestantes =
+            m.total_parcialidades - m.parcialidad_actual + 1;
+          return acc + cuota * mesesRestantes;
+        }
+
+        // Si es gasto normal o abono (monto negativo), sumamos directo
+        return acc + montoGasto;
+      }, 0);
+
     return {
-      disponible: limite - deudaNeta,
-      consumido: deudaNeta,
-      porcentaje: limite > 0 ? (deudaNeta / limite) * 100 : 0,
+      disponible: limite - deudaCalculada,
+      consumido: deudaCalculada,
+      porcentaje: limite > 0 ? (deudaCalculada / limite) * 100 : 0,
     };
   };
 
   const calcularSaldoEfectivo = () => {
     // 1. Empezamos desde cero (o desde un saldo inicial manual si lo tienes)
-    let saldoCalculado = 0; 
-  
+    let saldoCalculado = 0;
+
     // 2. Filtramos los movimientos que REALMENTE tocan dinero físico
     movimientos.forEach((mov) => {
       const monto = mov.monto || mov.monto_total || 0;
-  
+
       // CASO A: Es un ingreso de dinero (Sueldo, etc.)
       if (mov.tipo === "ingreso" && monto > 0) {
         saldoCalculado += monto;
       }
-  
+
       // CASO B: Es un gasto que hiciste con "Efectivo"
       if (mov.tipo === "gasto" && mov.tarjeta_id === "efectivo") {
         saldoCalculado -= monto;
       }
-  
+
       // CASO C: Es un pago que le hiciste a una tarjeta (Salida de tu dinero para pagar deuda)
       // Identificamos esto porque en tu 'agregarGasto' lo guardas como monto negativo en ingresos
-      if (mov.tipo === "ingreso" && monto < 0 && mov.concepto?.includes("Pago a tarjeta")) {
+      if (
+        mov.tipo === "ingreso" &&
+        monto < 0 &&
+        mov.concepto?.includes("Pago a tarjeta")
+      ) {
         saldoCalculado += monto; // Sumamos un negativo (osea resta)
       }
-      
+
       // NOTA: Si mov.tarjeta_id es un UUID (crédito), NO ENTRA AQUÍ.
       // Por eso los $7,695 ya no se restarán.
     });
-  
+
     return saldoCalculado;
   };
 
