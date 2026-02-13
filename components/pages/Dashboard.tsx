@@ -127,58 +127,105 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
     tarjetaId: number | string,
     limite: number = 0,
   ) => {
-    const deudaCalculada = movimientos
+    const deudaInsoluta = movimientos
       .filter((m) => m.tarjeta_id === tarjetaId)
       .reduce((acc, m) => {
-        const montoGasto = m.monto_total || m.monto || 0;
+        const montoTotalGasto = m.monto_total || m.monto || 0;
 
-        // Si es MSI, solo restamos del disponible lo que falta por pagar (Saldo insoluto)
-        if (m.es_msi && m.total_parcialidades && m.parcialidad_actual) {
-          const cuota = montoGasto / m.total_parcialidades;
+        if (
+          m.es_msi &&
+          m.total_parcialidades &&
+          m.parcialidad_actual !== undefined
+        ) {
+          const cuota = montoTotalGasto / m.total_parcialidades;
+
+          // ✅ CORRECTO: total - actual + 1
           const mesesRestantes =
             m.total_parcialidades - m.parcialidad_actual + 1;
-          return acc + cuota * mesesRestantes;
+
+          if (mesesRestantes > 0) {
+            return acc + cuota * mesesRestantes;
+          }
+          return acc;
         }
 
-        // Si es gasto normal o abono (monto negativo), sumamos directo
-        return acc + montoGasto;
+        return acc + montoTotalGasto;
       }, 0);
 
     return {
-      disponible: limite - deudaCalculada,
-      consumido: deudaCalculada,
-      porcentaje: limite > 0 ? (deudaCalculada / limite) * 100 : 0,
+      disponible: limite - deudaInsoluta,
+      consumido: deudaInsoluta,
+      porcentaje: limite > 0 ? (deudaInsoluta / limite) * 100 : 0,
     };
   };
 
+  console.log("=== DEBUG PAGO DEL MES ===");
+  movimientos
+    .filter((m) => m.tarjeta_id && m.tarjeta_id !== "efectivo")
+    .forEach((mov) => {
+      if (
+        mov.es_msi &&
+        mov.total_parcialidades &&
+        mov.parcialidad_actual !== undefined
+      ) {
+        const cuota = (mov.monto_total || 0) / mov.total_parcialidades;
+        const restantes = mov.total_parcialidades - mov.parcialidad_actual + 1;
+
+        console.log({
+          establecimiento: mov.establecimiento,
+          parcialidades: `${mov.parcialidad_actual}/${mov.total_parcialidades}`,
+          restantes: restantes,
+          cuota_mensual: cuota.toFixed(2),
+          se_suma: restantes > 0 ? "SÍ" : "NO",
+        });
+      }
+    });
   const calcularSaldoEfectivo = () => {
     let saldoCalculado = 0;
+
+    console.log("💰 === CALCULANDO EFECTIVO DISPONIBLE ===");
 
     movimientos.forEach((mov) => {
       const monto = mov.monto || mov.monto_total || 0;
 
-      // 1. SUMAMOS: Todo lo que sea un ingreso real de dinero
+      // REGLA: Solo sumamos ingresos reales
       if (mov.tipo === "ingreso" && monto > 0) {
         saldoCalculado += monto;
+        console.log("✅ Ingreso sumado:", {
+          concepto: mov.concepto,
+          monto: monto,
+          saldo_ahora: saldoCalculado,
+        });
       }
 
-      // 2. RESTAMOS: Gastos que salieron de tu bolsillo directamente
+      // REGLA: Solo restamos si el gasto fue en EFECTIVO
       if (mov.tipo === "gasto" && mov.tarjeta_id === "efectivo") {
         saldoCalculado -= monto;
+        console.log("❌ Gasto efectivo restado:", {
+          establecimiento: mov.establecimiento,
+          monto: monto,
+          saldo_ahora: saldoCalculado,
+        });
       }
 
-      // 3. RESTAMOS: Pagos que hiciste desde tu efectivo hacia tus tarjetas
-      // (Buscamos los registros negativos en la tabla de ingresos que creamos al pagar)
-      if (
+      // REGLA: Solo restamos al PAGAR la tarjeta (Salida de dinero real)
+      const esPagoATarjeta =
         mov.tipo === "ingreso" &&
         monto < 0 &&
-        (mov.concepto?.toLowerCase().includes("pago") ||
-          mov.establecimiento?.toLowerCase().includes("pago"))
-      ) {
-        saldoCalculado += monto; // Suma un negativo (resta)
+        (mov.concepto?.toLowerCase().includes("pago a tarjeta") ||
+          mov.establecimiento?.toLowerCase().includes("pago a tarjeta"));
+
+      if (esPagoATarjeta) {
+        saldoCalculado += monto; // Suma el negativo (resta)
+        console.log("💳 Pago a tarjeta restado:", {
+          concepto: mov.concepto,
+          monto: monto,
+          saldo_ahora: saldoCalculado,
+        });
       }
     });
 
+    console.log("🏁 EFECTIVO FINAL:", saldoCalculado);
     return saldoCalculado;
   };
   const prepararDatosGrafico = () => {
@@ -204,7 +251,6 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
   const calcularResumenFinanciero = () => {
     const hoy = new Date();
     const mesActual = hoy.getMonth();
-    const anioActual = hoy.getFullYear();
 
     let ingresoTotalMes = 0;
     let deudaTotalAcumulada = 0;
@@ -213,45 +259,45 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
     movimientos.forEach((mov) => {
       const montoGasto = mov.monto_total || mov.monto || 0;
       const fechaMov = new Date(mov.fecha || mov.fecha_compra!);
-      const esMesActual =
-        fechaMov.getMonth() === mesActual &&
-        fechaMov.getFullYear() === anioActual;
+      const tarjeta = tarjetas.find((t) => t.id === mov.tarjeta_id);
 
-      // 1. Ingresos del Mes (Sueldos, etc.)
-      if (mov.tipo === "ingreso" && (mov.monto || 0) > 0 && esMesActual) {
-        ingresoTotalMes += mov.monto || 0;
+      // 1. Ingresos (Solo este mes)
+      if (mov.tipo === "ingreso" && (mov.monto || 0) > 0) {
+        if (fechaMov.getMonth() === mesActual) {
+          ingresoTotalMes += mov.monto || 0;
+        }
       }
 
-      // 2. Lógica de Deudas en Tarjetas
+      // 2. Deudas de Tarjeta
       if (mov.tarjeta_id && mov.tarjeta_id !== "efectivo") {
-        const tarjeta = tarjetas.find((t) => t.id === mov.tarjeta_id);
-
-        // --- CALCULO DE DEUDA TOTAL (SALDO INSOLUTO) ---
-        if (mov.es_msi && mov.total_parcialidades && mov.parcialidad_actual) {
+        // CASO A: Gasto MSI
+        if (
+          mov.es_msi &&
+          mov.total_parcialidades &&
+          mov.parcialidad_actual !== undefined
+        ) {
           const cuota = montoGasto / mov.total_parcialidades;
-          // Calculamos cuántos meses quedan incluyendo el actual
           const mesesRestantes =
             mov.total_parcialidades - mov.parcialidad_actual + 1;
-          deudaTotalAcumulada += cuota * mesesRestantes;
-        } else {
-          // Si no es MSI o es un abono (monto negativo), se suma directo
-          deudaTotalAcumulada += montoGasto;
+
+          if (mesesRestantes > 0) {
+            deudaTotalAcumulada += cuota * mesesRestantes;
+            deudaExigibleMes += cuota;
+          }
         }
+        // CASO B: Gasto normal (de contado)
+        else if (montoGasto > 0) {
+          deudaTotalAcumulada += montoGasto;
 
-        // --- CALCULO DE PAGO DEL MES (EXIGIBLE) ---
-        if (tarjeta && esMesActual) {
-          const diaCorte = tarjeta.dia_corte || 31;
-          // Si compraste antes o el día de corte, se paga este mes
-          const entraEnCorte = fechaMov.getDate() <= diaCorte;
+          if (tarjeta) {
+            const diaCorte = tarjeta.dia_corte || 31;
+            const diaCompra = fechaMov.getDate();
+            const esMismoMes = fechaMov.getMonth() === mesActual;
+            const caeEnEstePeriodo = diaCompra <= diaCorte;
 
-          if (entraEnCorte) {
-            if (mov.es_msi && mov.total_parcialidades) {
-              deudaExigibleMes += montoGasto / mov.total_parcialidades;
-            } else if (montoGasto > 0) {
+            if (caeEnEstePeriodo && esMismoMes) {
               deudaExigibleMes += montoGasto;
             }
-            // Nota: Los abonos (pagos) no suelen sumarse aquí,
-            // ya que el "Pago del Mes" es lo que el banco te pide.
           }
         }
       }
@@ -376,7 +422,7 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
             {/* 2. Efectivo Disponible */}
             <div className="relative">
               <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">
-                Efectivo Real
+                Dinero en Mano / Débito
               </p>
               <p className="text-2xl font-bold text-white">
                 ${saldoEfectivoReal.toLocaleString()}
