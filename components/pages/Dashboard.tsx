@@ -152,40 +152,35 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
   };
 
   const calcularSaldoEfectivo = () => {
-    // 1. Empezamos desde cero (o desde un saldo inicial manual si lo tienes)
     let saldoCalculado = 0;
 
-    // 2. Filtramos los movimientos que REALMENTE tocan dinero físico
     movimientos.forEach((mov) => {
       const monto = mov.monto || mov.monto_total || 0;
 
-      // CASO A: Es un ingreso de dinero (Sueldo, etc.)
+      // 1. SUMAMOS: Todo lo que sea un ingreso real de dinero
       if (mov.tipo === "ingreso" && monto > 0) {
         saldoCalculado += monto;
       }
 
-      // CASO B: Es un gasto que hiciste con "Efectivo"
+      // 2. RESTAMOS: Gastos que salieron de tu bolsillo directamente
       if (mov.tipo === "gasto" && mov.tarjeta_id === "efectivo") {
         saldoCalculado -= monto;
       }
 
-      // CASO C: Es un pago que le hiciste a una tarjeta (Salida de tu dinero para pagar deuda)
-      // Identificamos esto porque en tu 'agregarGasto' lo guardas como monto negativo en ingresos
+      // 3. RESTAMOS: Pagos que hiciste desde tu efectivo hacia tus tarjetas
+      // (Buscamos los registros negativos en la tabla de ingresos que creamos al pagar)
       if (
         mov.tipo === "ingreso" &&
         monto < 0 &&
-        mov.concepto?.includes("Pago a tarjeta")
+        (mov.concepto?.toLowerCase().includes("pago") ||
+          mov.establecimiento?.toLowerCase().includes("pago"))
       ) {
-        saldoCalculado += monto; // Sumamos un negativo (osea resta)
+        saldoCalculado += monto; // Suma un negativo (resta)
       }
-
-      // NOTA: Si mov.tarjeta_id es un UUID (crédito), NO ENTRA AQUÍ.
-      // Por eso los $7,695 ya no se restarán.
     });
 
     return saldoCalculado;
   };
-
   const prepararDatosGrafico = () => {
     const resumenPorCat: Record<string, number> = {};
     movimientos.forEach((mov) => {
@@ -265,10 +260,15 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
     return { ingresoTotalMes, deudaTotalAcumulada, deudaExigibleMes };
   };
 
+  // 1. Calculamos los indicadores financieros
   const { ingresoTotalMes, deudaTotalAcumulada, deudaExigibleMes } =
     calcularResumenFinanciero();
-  const datosGrafico = prepararDatosGrafico();
+
+  // 2. Calculamos el efectivo disponible real
   const saldoEfectivoReal = calcularSaldoEfectivo();
+
+  // 3. Preparamos el gráfico
+  const datosGrafico = prepararDatosGrafico();
 
   return (
     <div className="bg-[#0f172a] min-h-screen text-gray-100 font-sans pb-24">
