@@ -138,7 +138,34 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
   };
 
   const calcularSaldoEfectivo = () => {
-    return resumen.disponible;
+    // 1. Empezamos desde cero (o desde un saldo inicial manual si lo tienes)
+    let saldoCalculado = 0; 
+  
+    // 2. Filtramos los movimientos que REALMENTE tocan dinero físico
+    movimientos.forEach((mov) => {
+      const monto = mov.monto || mov.monto_total || 0;
+  
+      // CASO A: Es un ingreso de dinero (Sueldo, etc.)
+      if (mov.tipo === "ingreso" && monto > 0) {
+        saldoCalculado += monto;
+      }
+  
+      // CASO B: Es un gasto que hiciste con "Efectivo"
+      if (mov.tipo === "gasto" && mov.tarjeta_id === "efectivo") {
+        saldoCalculado -= monto;
+      }
+  
+      // CASO C: Es un pago que le hiciste a una tarjeta (Salida de tu dinero para pagar deuda)
+      // Identificamos esto porque en tu 'agregarGasto' lo guardas como monto negativo en ingresos
+      if (mov.tipo === "ingreso" && monto < 0 && mov.concepto?.includes("Pago a tarjeta")) {
+        saldoCalculado += monto; // Sumamos un negativo (osea resta)
+      }
+      
+      // NOTA: Si mov.tarjeta_id es un UUID (crédito), NO ENTRA AQUÍ.
+      // Por eso los $7,695 ya no se restarán.
+    });
+  
+    return saldoCalculado;
   };
 
   const prepararDatosGrafico = () => {
@@ -170,51 +197,48 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
     let deudaTotalAcumulada = 0;
     let deudaExigibleMes = 0;
 
-    // 1. Cálculo de Ingresos Totales del Mes
     movimientos.forEach((mov) => {
+      const montoGasto = mov.monto_total || mov.monto || 0;
       const fechaMov = new Date(mov.fecha || mov.fecha_compra!);
-      if (mov.tipo === "ingreso" && (mov.monto || 0) > 0) {
-        if (
-          fechaMov.getMonth() === mesActual &&
-          fechaMov.getFullYear() === anioActual
-        ) {
-          ingresoTotalMes += mov.monto || 0;
-        }
+      const esMesActual =
+        fechaMov.getMonth() === mesActual &&
+        fechaMov.getFullYear() === anioActual;
+
+      // 1. Ingresos del Mes (Sueldos, etc.)
+      if (mov.tipo === "ingreso" && (mov.monto || 0) > 0 && esMesActual) {
+        ingresoTotalMes += mov.monto || 0;
       }
-    });
 
-    // 2. Cálculo de Deuda (Total vs Mes)
-    movimientos.forEach((mov) => {
-      if (
-        mov.tipo === "gasto" &&
-        mov.tarjeta_id &&
-        mov.tarjeta_id !== "efectivo"
-      ) {
+      // 2. Lógica de Deudas en Tarjetas
+      if (mov.tarjeta_id && mov.tarjeta_id !== "efectivo") {
         const tarjeta = tarjetas.find((t) => t.id === mov.tarjeta_id);
-        const montoGasto = mov.monto_total || mov.monto || 0;
 
-        // A. Sumar a Deuda Total (Lo que se debe siempre)
-        deudaTotalAcumulada += montoGasto;
+        // --- CALCULO DE DEUDA TOTAL (SALDO INSOLUTO) ---
+        if (mov.es_msi && mov.total_parcialidades && mov.parcialidad_actual) {
+          const cuota = montoGasto / mov.total_parcialidades;
+          // Calculamos cuántos meses quedan incluyendo el actual
+          const mesesRestantes =
+            mov.total_parcialidades - mov.parcialidad_actual + 1;
+          deudaTotalAcumulada += cuota * mesesRestantes;
+        } else {
+          // Si no es MSI o es un abono (monto negativo), se suma directo
+          deudaTotalAcumulada += montoGasto;
+        }
 
-        // B. Lógica de Deuda del Mes (MSI + Fecha de Corte)
-        if (tarjeta) {
-          const fechaCompra = new Date(mov.fecha_compra!);
+        // --- CALCULO DE PAGO DEL MES (EXIGIBLE) ---
+        if (tarjeta && esMesActual) {
           const diaCorte = tarjeta.dia_corte || 31;
+          // Si compraste antes o el día de corte, se paga este mes
+          const entraEnCorte = fechaMov.getDate() <= diaCorte;
 
-          // Determinar si entra en este periodo
-          // Si el día de compra es MAYOR al día de corte, pasa al siguiente mes
-          const entraEnEsteMes = fechaCompra.getDate() <= diaCorte;
-          const esMesActual = fechaCompra.getMonth() === mesActual;
-
-          if (entraEnEsteMes && esMesActual) {
-            if (mov.es_msi) {
-              // Si es MSI, solo sumamos la parcialidad (Monto / Total Meses)
-              const cuota = montoGasto / (mov.total_parcialidades || 1);
-              deudaExigibleMes += cuota;
-            } else {
-              // Si no es MSI, se suma todo
+          if (entraEnCorte) {
+            if (mov.es_msi && mov.total_parcialidades) {
+              deudaExigibleMes += montoGasto / mov.total_parcialidades;
+            } else if (montoGasto > 0) {
               deudaExigibleMes += montoGasto;
             }
+            // Nota: Los abonos (pagos) no suelen sumarse aquí,
+            // ya que el "Pago del Mes" es lo que el banco te pide.
           }
         }
       }
@@ -225,7 +249,6 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
 
   const { ingresoTotalMes, deudaTotalAcumulada, deudaExigibleMes } =
     calcularResumenFinanciero();
-
   const datosGrafico = prepararDatosGrafico();
   const saldoEfectivoReal = calcularSaldoEfectivo();
 
