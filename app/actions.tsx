@@ -59,45 +59,33 @@ export async function agregarGasto(formData: FormData) {
   const establecimiento = formData.get("establecimiento") as string;
 
   // --- LÓGICA DE PAGO A TARJETA ---
-  // --- LÓGICA DE PAGO A TARJETA ---
   if (tipoOperacion === "pago_tarjeta") {
-    // Obtener el nombre de la tarjeta para el concepto
-    const { data: tarjetaData } = await supabase
-      .from("tarjetas")
-      .select("nombre, alias")
-      .eq("id", tarjetaId)
-      .single();
+    // ... código existente del pago ...
 
-    const nombreTarjetaCompleto =
-      tarjetaData?.alias || tarjetaData?.nombre || "Tarjeta";
+    // ✅ NUEVO: Incrementar parcialidades de los MSI activos de esta tarjeta
+    const { data: gastosMSI } = await supabase
+      .from("gastos")
+      .select("*")
+      .eq("tarjeta_id", tarjetaId)
+      .eq("es_msi", true);
 
-    // 1. Abono en la tarjeta (gasto negativo)
-    const { error: errorPago } = await supabase.from("gastos").insert([
-      {
-        usuario_id: user.id,
-        tarjeta_id: tarjetaId,
-        establecimiento: "PAGO A TARJETA (ABONO)",
-        monto_total: -montoTotal,
-        fecha_compra: fechaCompra,
-        es_msi: false,
-        categoria: "Pagos",
-      },
-    ]);
+    if (gastosMSI) {
+      for (const gasto of gastosMSI) {
+        const parcialidadesRestantes =
+          gasto.total_parcialidades - gasto.parcialidad_actual + 1;
 
-    if (errorPago) return { success: false, error: errorPago.message };
-
-    // 2. Salida de efectivo
-    const { error: errorSalida } = await supabase.from("ingresos").insert([
-      {
-        usuario_id: user.id,
-        monto: -montoTotal,
-        concepto: `Pago a tarjeta: ${nombreTarjetaCompleto}`,
-        fecha: fechaCompra,
-        categoria: "Pagos",
-      },
-    ]);
-
-    if (errorSalida) return { success: false, error: errorSalida.message };
+        // Si aún hay parcialidades pendientes, incrementar
+        if (
+          parcialidadesRestantes > 0 &&
+          gasto.parcialidad_actual < gasto.total_parcialidades
+        ) {
+          await supabase
+            .from("gastos")
+            .update({ parcialidad_actual: gasto.parcialidad_actual + 1 })
+            .eq("id", gasto.id);
+        }
+      }
+    }
 
     revalidatePath("/");
     return { success: true };
