@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { agregarGasto } from "@/app/actions";
 import { ShoppingCart, ChevronDown, Banknote, CreditCard } from "lucide-react";
-
+import { toast } from "sonner"; // ✅ Importar
 interface Tarjeta {
   id: string;
   nombre: string;
@@ -25,22 +25,26 @@ export default function FormGasto({ tarjetas }: { tarjetas: Tarjeta[] }) {
   const [esMSI, setEsMSI] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
+  // components/formularios/FormGasto.tsx
+
   async function handleAction(formData: FormData) {
-    // Añadimos el tipo de operación manualmente al formData
     formData.append("tipo_operacion", tipoOperacion);
 
     const result = await agregarGasto(formData);
+
     if (result.success) {
-      alert(
-        tipoOperacion === "gasto"
-          ? "Gasto registrado"
-          : "Pago a tarjeta registrado",
+      // ✅ Toast en vez de alert
+      toast.success(
+        result.message ||
+          (tipoOperacion === "gasto"
+            ? "Gasto registrado"
+            : "Pago a tarjeta registrado"),
       );
       formRef.current?.reset();
       setEsMSI(false);
       setTipoOperacion("gasto");
     } else {
-      alert("Error: " + result.error);
+      toast.error("Error: " + result.error);
     }
   }
 

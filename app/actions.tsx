@@ -41,6 +41,8 @@ export async function agregarIngreso(formData: FormData) {
   revalidatePath("/");
   return { success: true };
 }
+// app/actions.tsx
+
 export async function agregarGasto(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -48,9 +50,7 @@ export async function agregarGasto(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "No autorizado" };
 
-  // 1. Extraemos TODOS los datos necesarios al inicio
   const categoria = (formData.get("categoria") as string) || "Otros";
-  const nombreTarjeta = formData.get("nombre_tarjeta") as string;
   const tipoOperacion = formData.get("tipo_operacion");
   const tarjetaId = formData.get("tarjeta_id");
   const montoTotal = parseFloat(formData.get("monto_total") as string);
@@ -60,38 +60,79 @@ export async function agregarGasto(formData: FormData) {
 
   // --- LÓGICA DE PAGO A TARJETA ---
   if (tipoOperacion === "pago_tarjeta") {
-    // ... código existente del pago ...
+    // 1. Obtener nombre de la tarjeta
+    const { data: tarjetaData } = await supabase
+      .from("tarjetas")
+      .select("nombre, alias")
+      .eq("id", tarjetaId)
+      .single();
 
-    // ✅ NUEVO: Incrementar parcialidades de los MSI activos de esta tarjeta
-    const { data: gastosMSI } = await supabase
+    const nombreTarjetaCompleto =
+      tarjetaData?.alias || tarjetaData?.nombre || "Tarjeta";
+
+    // 2. Registrar el abono en la tarjeta (gasto negativo)
+    const { error: errorPago } = await supabase.from("gastos").insert([
+      {
+        usuario_id: user.id,
+        tarjeta_id: tarjetaId,
+        establecimiento: "PAGO A TARJETA (ABONO)",
+        monto_total: -montoTotal,
+        fecha_compra: fechaCompra,
+        es_msi: false,
+        categoria: "Pagos",
+      },
+    ]);
+
+    if (errorPago) return { success: false, error: errorPago.message };
+
+    // 3. Registrar salida de efectivo
+    const { error: errorSalida } = await supabase.from("ingresos").insert([
+      {
+        usuario_id: user.id,
+        monto: -montoTotal,
+        concepto: `Pago a tarjeta: ${nombreTarjetaCompleto}`,
+        fecha: fechaCompra,
+        categoria: "Pagos",
+      },
+    ]);
+
+    if (errorSalida) return { success: false, error: errorSalida.message };
+
+    // ✅ 4. NUEVO: Incrementar parcialidades de MSI activos de esta tarjeta
+    const { data: gastosMSI, error: errorConsulta } = await supabase
       .from("gastos")
       .select("*")
       .eq("tarjeta_id", tarjetaId)
-      .eq("es_msi", true);
+      .eq("es_msi", true)
+      .gt("monto_total", 0); // Solo gastos reales, no abonos
 
-    if (gastosMSI) {
+    if (!errorConsulta && gastosMSI) {
       for (const gasto of gastosMSI) {
-        const parcialidadesRestantes =
-          gasto.total_parcialidades - gasto.parcialidad_actual + 1;
-
-        // Si aún hay parcialidades pendientes, incrementar
-        if (
-          parcialidadesRestantes > 0 &&
-          gasto.parcialidad_actual < gasto.total_parcialidades
-        ) {
-          await supabase
+        // Solo incrementar si aún hay parcialidades pendientes
+        if (gasto.parcialidad_actual < gasto.total_parcialidades) {
+          const { error: errorUpdate } = await supabase
             .from("gastos")
-            .update({ parcialidad_actual: gasto.parcialidad_actual + 1 })
+            .update({
+              parcialidad_actual: gasto.parcialidad_actual + 1,
+            })
             .eq("id", gasto.id);
+
+          if (errorUpdate) {
+            console.error("Error al incrementar parcialidad:", errorUpdate);
+          }
         }
       }
     }
 
     revalidatePath("/");
-    return { success: true };
-  } else {
-    // --- LÓGICA DE GASTO NORMAL ---
+    return {
+      success: true,
+      message: "Pago registrado y parcialidades actualizadas",
+    };
+  }
 
+  // --- LÓGICA DE GASTO NORMAL ---
+  else {
     if (tarjetaId === "efectivo") {
       const { error } = await supabase.from("ingresos").insert([
         {
@@ -99,7 +140,7 @@ export async function agregarGasto(formData: FormData) {
           monto: -montoTotal,
           concepto: establecimiento,
           fecha: fechaCompra,
-          categoria: categoria, // <--- AGREGADO AQUÍ
+          categoria: categoria,
         },
       ]);
       if (error) return { success: false, error: error.message };
@@ -113,7 +154,7 @@ export async function agregarGasto(formData: FormData) {
           monto_total: montoTotal,
           fecha_compra: fechaCompra,
           es_msi: esMSI,
-          categoria: categoria, // <--- AGREGADO AQUÍ
+          categoria: categoria,
           total_parcialidades: esMSI
             ? parseInt(formData.get("total_parcialidades") as string)
             : 1,

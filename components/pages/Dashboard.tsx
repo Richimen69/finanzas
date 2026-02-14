@@ -123,41 +123,36 @@ const DashboardTarjetas: React.FC<DashboardProps> = ({
   resumen = { disponible: 0, deuda: 0 },
 }) => {
   // Cálculos de saldos
-  const calcularSaldoTarjeta = (
-    tarjetaId: number | string,
-    limite: number = 0,
-  ) => {
-    const deudaInsoluta = movimientos
-      .filter((m) => m.tarjeta_id === tarjetaId)
-      .reduce((acc, m) => {
-        const montoTotalGasto = m.monto_total || m.monto || 0;
+const calcularSaldoTarjeta = (
+  tarjetaId: number | string,
+  limite: number = 0,
+) => {
+  const deudaInsoluta = movimientos
+    .filter((m) => m.tarjeta_id === tarjetaId)
+    .reduce((acc, m) => {
+      const montoTotalGasto = m.monto_total || m.monto || 0;
 
-        if (
-          m.es_msi &&
-          m.total_parcialidades &&
-          m.parcialidad_actual !== undefined
-        ) {
-          const cuota = montoTotalGasto / m.total_parcialidades;
+      // ✅ SIMPLIFICADO: Todo es MSI ahora
+      if (m.total_parcialidades && m.parcialidad_actual !== undefined) {
+        const cuota = montoTotalGasto / m.total_parcialidades;
+        const mesesRestantes = m.total_parcialidades - m.parcialidad_actual + 1;
 
-          // ✅ CORRECTO: total - actual + 1
-          const mesesRestantes =
-            m.total_parcialidades - m.parcialidad_actual + 1;
-
-          if (mesesRestantes > 0) {
-            return acc + cuota * mesesRestantes;
-          }
-          return acc;
+        if (mesesRestantes > 0) {
+          return acc + cuota * mesesRestantes;
         }
+        return acc;
+      }
 
-        return acc + montoTotalGasto;
-      }, 0);
+      // Fallback por si hay registros antiguos sin estas columnas
+      return acc + montoTotalGasto;
+    }, 0);
 
-    return {
-      disponible: limite - deudaInsoluta,
-      consumido: deudaInsoluta,
-      porcentaje: limite > 0 ? (deudaInsoluta / limite) * 100 : 0,
-    };
+  return {
+    disponible: limite - deudaInsoluta,
+    consumido: deudaInsoluta,
+    porcentaje: limite > 0 ? (deudaInsoluta / limite) * 100 : 0,
   };
+};
 
   console.log("=== DEBUG PAGO DEL MES ===");
   movimientos
