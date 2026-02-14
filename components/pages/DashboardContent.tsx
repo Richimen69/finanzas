@@ -1,4 +1,4 @@
-// src/components/DashboardContent.tsx
+// src/components/pages/DashboardContent.tsx
 import { createClient } from "@/lib/supabase/server";
 import DashboardTarjetas from "./Dashboard";
 import FormGasto from "../formularios/FormGastos";
@@ -22,8 +22,13 @@ export default async function DashboardContent() {
     ...(ingresos?.map((i) => ({ ...i, tipo: "ingreso" as const })) || []),
   ];
 
+  // ✅ CORRECCIÓN: Usar fecha correcta según el tipo
   const movimientos = movimientosRaw.sort(
-    (a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime(),
+    (a, b) => {
+      const fechaA = new Date(a.fecha || a.fecha_compra!);
+      const fechaB = new Date(b.fecha || b.fecha_compra!);
+      return fechaB.getTime() - fechaA.getTime();
+    }
   );
 
   const totalDeuda =
@@ -39,7 +44,7 @@ export default async function DashboardContent() {
     <div>
       <DashboardTarjetas
         tarjetas={tarjetas || []}
-        movimientos={movimientos.slice(0, 5)}
+        movimientos={movimientos}
         resumen={{ disponible: disponibleEfectivo, deuda: totalDeuda }}
       />
       <div className="max-w-md mx-auto p-4">
